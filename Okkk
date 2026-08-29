@@ -1,0 +1,142 @@
+-- Dig or Die! Advanced ESP Script for Delta
+-- Optimized for Speed and Accuracy
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- إعدادات السكربت
+local Settings = {
+    ShowEnemyBombs = true,
+    ShowResources = false,
+    BombColor = Color3.fromRGB(255, 0, 0), -- أحمر للقنابل
+    ResourceColor = Color3.fromRGB(255, 215, 0), -- ذهبي للموارد
+    OutlineEnabled = true,
+    Thickness = 2
+}
+
+-- واجهة المستخدم البسيطة
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "DDoD_ESP"
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = game.CoreGui
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 180, 0, 25)
+Frame.Position = UDim2.new(0, 10, 0, 10)
+Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
+
+local Label = Instance.new("TextLabel")
+Label.Size = UDim2.new(1, 0, 1, 0)
+Label.BackgroundTransparency = 1
+Label.Text = "✅ ESP Active"
+Label.TextColor3 = Color3.fromRGB(0, 255, 0)
+Label.Font = Enum.Font.GothamBold
+Label.TextSize = 14
+Label.Parent = Frame
+
+-- مجموعة لتخزين الرسومات
+local Drawings = {}
+local function CleanDrawings()
+    for i, Drawing in pairs(Drawings) do
+        Drawing:Remove()
+    end
+    table.clear(Drawings)
+end
+
+-- دالة لرسم دائرة
+local function DrawCircleAt(position, radius, color)
+    local ScreenPos = workspace.CurrentCamera:WorldToViewportPoint(position)
+    if ScreenPos.Z > 0 then
+        local Circle = Drawing.new("Circle")
+        Circle.Position = Vector2.new(ScreenPos.X, ScreenPos.Y)
+        Circle.Radius = radius
+        Circle.Color = color
+        Circle.Thickness = Settings.Thickness
+        Circle.Filled = false
+        Circle.Transparency = 0.3
+        Circle.Visible = true
+        table.insert(Drawings, Circle)
+        return Circle
+    end
+end
+
+-- دالة لرسم خط (للربط بين اللاعب والهدف)
+local function DrawLineTo(position, color)
+    local ScreenPos = workspace.CurrentCamera:WorldToViewportPoint(position)
+    if ScreenPos.Z > 0 then
+        local Line = Drawing.new("Line")
+        local CameraPos = workspace.CurrentCamera.CFrame.Position
+        local ScreenCamPos = workspace.CurrentCamera:WorldToViewportPoint(CameraPos)
+        
+        Line.From = Vector2.new(ScreenCamPos.X, ScreenCamPos.Y)
+        Line.To = Vector2.new(ScreenPos.X, ScreenPos.Y)
+        Line.Color = color
+        Line.Thickness = 1
+        Line.Transparency = 0.5
+        Line.Visible = true
+        table.insert(Drawings, Line)
+    end
+end
+
+-- المنطق الرئيسي للكشف
+local function UpdateESP()
+    CleanDrawings()
+    
+    -- نبحث في الـ Workspace عن جميع الأجزاء
+    -- نستخدم GetDescendants للحصول على كل الأشياء داخل الأرضية
+    local allParts = Workspace:GetDescendants()
+    
+    for _, part in pairs(allParts) do
+        if part:IsA("BasePart") then
+            -- استراتيجيات الكشف:
+            -- 1. البحث عن الأجزاء التي تحتوي في اسمها على كلمات مثل "Bomb", "Mine", "Trap"
+            -- 2. البحث عن الأجزاء الصغيرة جداً التي ليست جزءاً من الأرضية الطبيعية
+            
+            local isBomb = false
+            local isResource = false
+            
+            -- فحص الاسم
+            if part.Name:lower():find("bomb") or part.Name:lower():find("mine") or part.Name:lower():find("trap") then
+                isBomb = true
+            end
+            
+            -- فحص الحجم (القنابل عادة صغيرة جداً مقارنة بالأرضية)
+            if part.Size.X < 1.5 and part.Size.Y < 1.5 and part.Size.Z < 1.5 then
+                -- قد تكون قنبلة أو مورد
+                -- نتحقق من وجود خاصية "Value" أو "Money" داخلها
+                if part:FindFirstChild("Money") or part:FindFirstChild("Value") then
+                    isResource = true
+                elseif not isBomb then
+                    -- إذا لم تكن قنبلة معروفة، وقد تكون مورد
+                    isResource = true
+                end
+            end
+            
+            -- إذا وجدنا هدفاً، نرسم عليه
+            if (isBomb and Settings.ShowEnemyBombs) or (isResource and Settings.ShowResources) then
+                
+                -- نحدد اللون المناسب
+                local targetColor = isBomb and Settings.BombColor or Settings.ResourceColor
+                
+                -- نرسم الدائرة
+                DrawCircleAt(part.Position, 15, targetColor)
+                
+                -- نرسم خطاً لربطها باللاعب (اختياري، يمكن إزالته للأداء)
+                -- DrawLineTo(part.Position, targetColor)
+            end
+        end
+    end
+end
+
+-- حلقة التحديث
+while RunService.RenderStepped:Wait() do
+    if LocalPlayer and LocalPlayer.Character then
+        UpdateESP()
+    end
+end
+
+print("🚀 Dig or Die ESP Loaded!")
