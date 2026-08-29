@@ -1,0 +1,160 @@
+-- Dig or Die! Advanced & Optimized ESP for Delta
+-- Fixed for Accuracy and Smoothness
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- إعدادات الأداء والدقة
+local Settings = {
+    ShowBombs = true,
+    ShowMoney = true,
+    BombColor = Color3.fromRGB(255, 50, 50), -- أحمر فاتح للقنابل
+    MoneyColor = Color3.fromRGB(255, 215, 0), -- ذهبي للمال
+    OutlineWidth = 2,
+    DrawDistance = 100 -- مسافة الرسم (لتقليل الحمل)
+}
+
+-- واجهة المستخدم
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "DigESP_Pro"
+ScreenGui.Parent = game.CoreGui
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 150, 0, 20)
+Frame.Position = UDim2.new(0, 10, 0, 10)
+Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Frame.BackgroundTransparency = 0.5
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
+
+local Label = Instance.new("TextLabel")
+Label.Size = UDim2.new(1, 0, 1, 0)
+Label.BackgroundTransparency = 1
+Label.Text = "✅ ESP Active & Optimized"
+Label.TextColor3 = Color3.fromRGB(0, 255, 0)
+Label.Font = Enum.Font.GothyBold
+Label.TextSize = 12
+Label.Parent = Frame
+
+-- تخزين الرسومات لتجنب إنشائها كل إطار
+local activeDrawings = {}
+local function removeDrawing(d)
+    if d and d.Visible then
+        d:Remove()
+    end
+end
+
+local function createDrawing(type, pos, size, color)
+    local screenPos = workspace.CurrentCamera:WorldToViewportPoint(pos)
+    if screenPos.Z > 0 and screenPos.Z < Settings.DrawDistance then
+        local drawing = Drawing.new(type)
+        drawing.Visible = true
+        drawing.Transparency = 0.4
+        drawing.Color = color
+        
+        if type == "Circle" then
+            drawing.Position = Vector2.new(screenPos.X, screenPos.Y)
+            drawing.Radius = size
+            drawing.Thickness = Settings.OutlineWidth
+            drawing.Filled = false
+        elseif type == "Square" then
+            drawing.Position = Vector2.new(screenPos.X - size, screenPos.Y - size)
+            drawing.Size = Vector2.new(size * 2, size * 2)
+            drawing.Thickness = 1
+        elseif type == "Line" then
+            local camPos = workspace.CurrentCamera.CFrame.Position
+            local camScreen = workspace.CurrentCamera:WorldToViewportPoint(camPos)
+            drawing.From = Vector2.new(camScreen.X, camScreen.Y)
+            drawing.To = Vector2.new(screenPos.X, screenPos.Y)
+            drawing.Color = color
+            drawing.Thickness = 1
+        end
+        
+        return drawing
+    end
+    return nil
+end
+
+-- الدالة الرئيسية لتحديث الرسم بكفاءة
+local function updateEsp()
+    -- نبدأ بحذف الرسومات القديمة التي لم تعد ضرورية (لتمديد الحياة)
+    -- لكن هنا سنستخدم طريقة أسهل: إنشاء جديد لكل إطار للأشياء الظاهرة فقط
+    
+    -- 1. جمع كل الأجزاء في الـ Workspace
+    -- نستخدم GetChildren بدلاً من GetDescendants للأداء إذا كانت اللعبة منظمة جيداً
+    local children = Workspace:GetChildren()
+    
+    for _, item in pairs(children) do
+        if item:IsA("BasePart") then
+            local part = item
+            local isBomb = false
+            local isMoney = false
+            
+            -- استراتيجية الكشف المحسنة:
+            -- 1. التحقق من الاسم (مكمل وليس أساسي)
+            local name = part.Name:lower()
+            if name:find("bomb") or name:find("mine") or name:find("trap") then
+                isBomb = true
+            end
+            
+            -- 2. التحقق من الحجم والمحتوى (للمال)
+            if part:FindFirstChild("Value") or part:FindFirstChild("Money") or part:FindFirstChild("Coin") then
+                isMoney = true
+            end
+            
+            -- 3. التحقق من الحجم (القنابل صغيرة جداً)
+            local size = part.Size
+            if size.X < 2 and size.Y < 2 and size.Z < 2 then
+                -- إذا كان صغيراً وليس جزءاً من الأرضية الأساسية
+                if not part.Name:lower():find("ground") and not part.Name:lower():find("rock") and not part.Name:lower():find("dirt") then
+                    isBomb = true -- افتراض أنه قنبلة إذا كان صغيراً وغير أرضية
+                end
+            end
+            
+            if (isBomb and Settings.ShowBombs) or (isMoney and Settings.ShowMoney) then
+                local color = isBomb and Settings.BombColor or Settings.MoneyColor
+                local sizeVal = isBomb and 15 or 10 -- حجم الدائرة/المربع
+                
+                -- رسم دائرة حول الهدف
+                local circle = createDrawing("Circle", part.Position, sizeVal, color)
+                if circle then
+                    activeDrawings[part] = circle
+                end
+                
+                -- رسم خط إذا كان الهدف قريباً (للدقة العالية)
+                if part.Position.magnitude < 50 then
+                    local line = createDrawing("Line", part.Position, sizeVal, color)
+                    if line then
+                        activeDrawings[part] = line -- نحتفظ به لتحديثه
+                    end
+                end
+            end
+        end
+    end
+    
+    -- تنظيف الرسبات القديمة التي لم تعد مرتبطة بأي جزء
+    local partsCurrentlyInGame = {}
+    for _, item in pairs(children) do
+        if item:IsA("BasePart") then
+            partsCurrentlyInGame[item] = true
+        end
+    end
+    
+    for part, drawing in pairs(activeDrawings) do
+        if not partsCurrentlyInGame[part] then
+            drawing:Remove()
+            activeDrawings[part] = nil
+        end
+    end
+end
+
+-- حلقة التحديث
+RunService.RenderStepped:Connect(function()
+    if LocalPlayer and LocalPlayer.Character then
+        updateEsp()
+    end
+end)
+
+print("🚀 Dig or Die ESP Pro Loaded - Optimized for Delta")
