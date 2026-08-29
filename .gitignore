@@ -1,0 +1,142 @@
+-- Dig or Die! - Custom Script by NoTrack
+-- Works on Delta Executor
+
+-- 1. إعدادات السكربت
+local Settings = {
+    ShowEnemyBombs = true,      -- هل تريد رؤية قنابل العدو؟ (نعم/لا)
+    ShowResources = false,      -- هل تريد رؤية الفلوس/الموارد؟ (نعم/لا)
+    BombColor = Color3.fromRGB(255, 0, 0), -- لون القنابل (أحمر)
+    ResourceColor = Color3.fromRGB(255, 215, 0), -- لون الفلوس (ذهبي)
+    LineColor = Color3.fromRGB(255, 255, 255) -- لون الخطوط
+}
+
+-- 2. إعداد واجهة المستخدم (UI)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "DigOrDieUI"
+ScreenGui.Parent = game.CoreGui
+
+local Frame = Instance.new("Frame")
+Frame.Name = "StatusFrame"
+Frame.Size = UDim2.new(0, 200, 0, 30)
+Frame.Position = UDim2.new(0.5, -100, 0, 10)
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
+
+local Label = Instance.new("TextLabel")
+Label.Name = "StatusLabel"
+Label.Size = UDim2.new(1, 0, 1, 0)
+Label.BackgroundTransparency = 1
+Label.Text = "🟢 Dig or Die ESP Loaded"
+Label.TextColor3 = Color3.fromRGB(0, 255, 0)
+Label.Font = Enum.Font.GothamBold
+Label.TextSize = 14
+Label.Parent = Frame
+
+-- 3. دالة لرسم الخطوط والأشكال (Drawing API)
+local Drawings = {}
+local function DrawCircle(x, y, radius, color, thickness)
+    local circle = Drawing.new("Circle")
+    circle.Transparency = 0.2
+    circle.Color = color
+    circle.Thickness = thickness or 2
+    circle.Filled = false
+    circle.Position = Vector2.new(x, y)
+    circle.Radius = radius
+    circle.Visible = true
+    table.insert(Drawings, circle)
+    return circle
+end
+
+local function DrawLine(pos1, pos2, color, thickness)
+    local line = Drawing.new("Line")
+    line.Color = color
+    line.Thickness = thickness or 1
+    line.From = pos1
+    line.To = pos2
+    line.Visible = true
+    table.insert(Drawings, line)
+    return line
+end
+
+-- 4. منطق السكربت الأساسي
+-- ملاحظة: بما أن اللعبة قد تستخدم نظاماً مختلفاً في كشف القنابل،
+-- سنستخدم طريقة عامة تعتمد على كشف الكائنات القريبة أو التخمين إذا لم نجد الـ API الدقيق.
+-- لكن لأجل الدقة في Delta، سنستخدم الطريقة الأكثر شيوعاً وهي كشف الـ "Parts" المرتبطة بالقنابل.
+
+local Player = game.Players.LocalPlayer
+local Character = Player.Character or Player.CharacterAdded:Wait()
+local Camera = workspace.CurrentCamera
+
+-- دالة لتحديث الموضع
+local function UpdateDrawings()
+    -- تنظيف الرسم القديم
+    for i, drawing in pairs(Drawings) do
+        drawing:Remove()
+    end
+    table.clear(Drawings)
+
+    -- البحث عن القنابل أو الكائنات المشبوهة في اللعبة
+    -- عادة في ألعاب الحفر، القنابل تكون كائنات خاصة (Part)
+    for _, part in pairs(workspace:GetDescendants()) do
+        if part:IsA("BasePart") then
+            -- شرط بسيط: إذا كان الجزء يحتوي على اسم يشير لقنبلة أو كان له خاصية معينة
+            -- هنا نستخدم تخمين ذكي: الأجزاء الصغيرة التي لا يمكن تدميرها بسهولة أو لها لون خاص
+            
+            -- ملاحظة: قد تحتاج لتعديل الاسم "Bomb" أو "Mine" حسب كيفية تسمية اللعبة الداخلية
+            if part.Name:lower():find("bomb") or part.Name:lower():find("mine") or part.Name:lower():find("explosive") then
+                
+                -- التحقق من أن اللاعب هو العدو (ليس اللاعب المحلي)
+                local owner = part:FindFirstChild("Owner") or part:FindFirstChild("OwnerName")
+                local isEnemy = true
+                
+                -- إذا وجدت طريقة لتحديد المالك، استخدمها هنا
+                -- حالياً سنفترض أن كل القنابل الظاهرة هي للأعداء أو البيئة
+                
+                local screenPos = Camera:WorldToViewportPoint(part.Position)
+                
+                if screenPos.Z > 0 then -- إذا كان العنصر أمام الكاميرا
+                    local x, y = screenPos.X, screenPos.Y
+                    
+                    if Settings.ShowEnemyBombs then
+                        DrawCircle(Vector2.new(x, y), 20, Settings.BombColor, 2)
+                    end
+                    
+                    if Settings.ShowResources and part:FindFirstChild("MoneyValue") then
+                        DrawCircle(Vector2.new(x, y), 15, Settings.ResourceColor, 2)
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- تحديث الرسم كل فترة زمنية (لأن القنابل تتغير أو تظهر)
+while wait(0.1) do -- كل 0.1 ثانية
+    if not game:IsLoaded() then continue end
+    
+    -- محاولة الكشف الذكي
+    -- في ألعاب Dig or Die، القنابل غالباً تكون كائنات "Part" مخفية أو ملونة
+    local parts = workspace:GetChildren()
+    for _, part in pairs(parts) do
+        if part:IsA("BasePart") then
+            -- فحص خاصية "Transparency" أو "Color" إذا كانت القنابل مميزة
+            -- هذا يعتمد على تحديثات اللعبة، لذا سأضع شرطاً عاماً
+            if part.Transparency == 0 and part.Size.X < 2 and part.Size.Y < 2 then
+                 -- هذا مثال، قد تحتاج لتعديل الأسماء
+            end
+        end
+    end
+    
+    UpdateDrawings()
+end
+
+-- إزالة السكربت عند الخروج
+game:BindToClose(function()
+    for _, drawing in pairs(Drawings) do
+        drawing:Remove()
+    end
+end)
+
+print("✅ Dig or Die ESP Script Loaded Successfully!")
+print("👁️ Enemy Bombs: " .. tostring(Settings.ShowEnemyBombs))
