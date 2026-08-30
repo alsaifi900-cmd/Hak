@@ -1,0 +1,206 @@
+-- إعدادات السكربت
+local Settings = {
+    AimbotEnabled = true,
+    AimbotKey = Enum.UserInputType.MouseButton2, -- زر الفأرة الأيمن
+    AimbotSmoothness = 0.1,
+    RadarEnabled = true,
+    RadarSize = 200,
+    RadarPosition = UDim2.new(0.85, 0, 0.1, 0)
+}
+
+-- خدمات Roblox
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+
+-- متغيرات
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+local AimbotTarget = nil
+
+-- إنشاء واجهة الرادار
+local function CreateRadar()
+    local Radar = Instance.new("ScreenGui")
+    Radar.Name = "PlayerRadar"
+    Radar.Parent = game:GetService("CoreGui")
+    
+    local RadarFrame = Instance.new("Frame")
+    RadarFrame.Size = UDim2.new(0, Settings.RadarSize, 0, Settings.RadarSize)
+    RadarFrame.Position = Settings.RadarPosition
+    RadarFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+    RadarFrame.BackgroundTransparency = 0.5
+    RadarFrame.BorderColor3 = Color3.new(0, 1, 0)
+    RadarFrame.BorderSizePixel = 2
+    RadarFrame.Parent = Radar
+    
+    -- إضافة دائرة للرادار
+    local RadarCircle = Instance.new("Frame")
+    RadarCircle.Size = UDim2.new(1, 0, 1, 0)
+    RadarCircle.Position = UDim2.new(0, 0, 0, 0)
+    RadarCircle.BackgroundColor3 = Color3.new(0, 0, 0)
+    RadarCircle.BackgroundTransparency = 0.7
+    RadarCircle.BorderSizePixel = 0
+    RadarCircle.Parent = RadarFrame
+    
+    -- تطبيق دائرية للإطار
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(0.5, 0)
+    UICorner.Parent = RadarFrame
+    
+    -- إضافة نص لاسم اللاعب
+    local PlayerLabel = Instance.new("TextLabel")
+    PlayerLabel.Size = UDim2.new(0, 100, 0, 20)
+    PlayerLabel.Position = UDim2.new(0, 5, 0, 5)
+    PlayerLabel.BackgroundColor3 = Color3.new(0, 0, 0)
+    PlayerLabel.BackgroundTransparency = 0.5
+    PlayerLabel.TextColor3 = Color3.new(1, 1, 1)
+    PlayerLabel.Text = "RADAR"
+    PlayerLabel.Font = Enum.Font.SourceSansBold
+    PlayerLabel.TextSize = 14
+    PlayerLabel.Parent = RadarFrame
+    
+    return Radar, RadarFrame
+end
+
+local Radar, RadarFrame = CreateRadar()
+
+-- وظيفة تحديث الرادار
+local function UpdateRadar()
+    if not Settings.RadarEnabled then
+        Radar.Enabled = false
+        return
+    end
+    
+    Radar.Enabled = true
+    
+    -- مسح النقاط القديمة
+    for _, child in pairs(RadarFrame:GetChildren()) do
+        if child:IsA("Frame") and child ~= RadarFrame then
+            child:Destroy()
+        end
+    end
+    
+    -- إضافة نقاط للاعبين
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local playerPos = player.Character.HumanoidRootPart.Position
+            local localPos = LocalPlayer.Character.HumanoidRootPart.Position
+            
+            -- حساب المسافة والاتجاه
+            local distance = (playerPos - localPos).Magnitude
+            local direction = (playerPos - localPos).Unit
+            
+            -- تحويل إلى إحداثيات الرادار
+            local radarX = direction.X * (distance / 100) * (Settings.RadarSize / 2)
+            local radarY = direction.Z * (distance / 100) * (Settings.RadarSize / 2)
+            
+            -- إنشاء نقطة للاعب
+            local PlayerDot = Instance.new("Frame")
+            PlayerDot.Size = UDim2.new(0, 6, 0, 6)
+            PlayerDot.Position = UDim2.new(0.5, radarX - 3, 0.5, radarY - 3)
+            PlayerDot.BackgroundColor3 = player.Team and player.Team.TeamColor.Color or Color3.new(1, 0, 0)
+            PlayerDot.BorderSizePixel = 0
+            PlayerDot.Parent = RadarFrame
+            
+            -- تطبيق دائرية للنقطة
+            local DotCorner = Instance.new("UICorner")
+            DotCorner.CornerRadius = UDim.new(0.5, 0)
+            DotCorner.Parent = PlayerDot
+            
+            -- إضافة اسم اللاعب عند التمرير
+            local PlayerNameLabel = Instance.new("TextLabel")
+            PlayerNameLabel.Size = UDim2.new(0, 80, 0, 16)
+            PlayerNameLabel.Position = UDim2.new(0, radarX + 5, 0, radarY - 8)
+            PlayerNameLabel.BackgroundColor3 = Color3.new(0, 0, 0)
+            PlayerNameLabel.BackgroundTransparency = 0.5
+            PlayerNameLabel.TextColor3 = Color3.new(1, 1, 1)
+            PlayerNameLabel.Text = player.Name
+            PlayerNameLabel.Font = Enum.Font.SourceSans
+            PlayerNameLabel.TextSize = 12
+            PlayerNameLabel.Visible = false
+            PlayerNameLabel.Parent = RadarFrame
+            
+            -- إظهار/إخفاء الاسم عند التمرير
+            PlayerDot.MouseEnter:Connect(function()
+                PlayerNameLabel.Visible = true
+            end)
+            
+            PlayerDot.MouseLeave:Connect(function()
+                PlayerNameLabel.Visible = false
+            end)
+        end
+    end
+end
+
+-- وظيفة الـ Aimbot
+local function FindClosestPlayer()
+    local closestPlayer = nil
+    local closestDistance = math.huge
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+            local character = player.Character
+            local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+            
+            if humanoidRootPart then
+                local screenPos = Camera:WorldToScreenPoint(humanoidRootPart.Position)
+                local mousePos = Vector2.new(Mouse.X, Mouse.Y)
+                local distance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                
+                if distance < closestDistance and screenPos.Z > 0 then
+                    closestDistance = distance
+                    closestPlayer = player
+                end
+            end
+        end
+    end
+    
+    return closestPlayer
+end
+
+-- تحديث الـ Aimbot
+local function UpdateAimbot()
+    if not Settings.AimbotEnabled then
+        AimbotTarget = nil
+        return
+    end
+    
+    if UserInputService:IsMouseButtonPressed(Settings.AimbotKey) then
+        if not AimbotTarget or not AimbotTarget.Character or not AimbotTarget.Character:FindFirstChild("HumanoidRootPart") then
+            AimbotTarget = FindClosestPlayer()
+        end
+        
+        if AimbotTarget and AimbotTarget.Character:FindFirstChild("HumanoidRootPart") then
+            local targetPosition = AimbotTarget.Character.HumanoidRootPart.Position
+            local currentLook = Camera.CFrame.LookVector
+            local targetLook = (targetPosition - Camera.CFrame.Position).Unit
+            local newLook = currentLook:lerp(targetLook, Settings.AimbotSmoothness)
+            
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + newLook)
+        end
+    else
+        AimbotTarget = nil
+    end
+end
+
+-- تحديث السكربت في كل إطار
+RunService.RenderStepped:Connect(function()
+    UpdateRadar()
+    UpdateAimbot()
+end)
+
+-- واجهة تحكم بسيطة
+local function CreateControlGUI()
+    local ControlGUI = Instance.new("ScreenGui")
+    ControlGUI.Name = "ScriptControls"
+    ControlGUI.Parent = game:GetService("CoreGui")
+    
+    local ControlFrame = Instance.new("Frame")
+    ControlFrame.Size = UDim2.new(0, 200, 0, 150)
+    ControlFrame.Position = UDim2.new(0, 10, 0.5, -75)
+    ControlFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+    ControlFrame.BackgroundTransparency = 0.3
+    ControlFrame.BorderColor3 = Color3.new(0, 1, 0)
+    ControlFrame.BorderSizePixel = 2
+    ControlFrame.Parent
