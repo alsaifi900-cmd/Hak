@@ -1,0 +1,279 @@
+-- Filename: "DeltaAdminGUI_iPad.lua"
+-- Place in StarterPlayerScripts or StarterCharacterScripts
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+
+-- Admin Check (Replace with your UserId)
+local ADMINS = {
+    [LocalPlayer.UserId] = true, -- Add your UserId here
+    -- Example: [12345678] = true,
+}
+
+-- GUI Setup (Touch-Optimized)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "DeltaAdminGUI_iPad"
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0.8, 0, 0.7, 0) -- Larger for touch
+MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.BackgroundTransparency = 0.2
+MainFrame.BorderSizePixel = 0
+MainFrame.Visible = false
+MainFrame.Parent = ScreenGui
+
+-- Toggle GUI with a screen tap (double-tap)
+local tapCount = 0
+local lastTap = 0
+UserInputService.TouchTap:Connect(function()
+    local currentTime = tick()
+    if currentTime - lastTap < 0.5 then
+        tapCount = tapCount + 1
+        if tapCount >= 2 then
+            MainFrame.Visible = not MainFrame.Visible
+            tapCount = 0
+        end
+    else
+        tapCount = 1
+    end
+    lastTap = currentTime
+end)
+
+-- Title Bar
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(1, 0, 0, 40) -- Larger for touch
+Title.Position = UDim2.new(0, 0, 0, 0)
+Title.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Title.Text = "Delta Admin Panel (iPad)"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 20
+Title.Font = Enum.Font.GothamBold
+Title.Parent = MainFrame
+
+local CloseButton = Instance.new("TextButton")
+CloseButton.Name = "CloseButton"
+CloseButton.Size = UDim2.new(0, 40, 0, 40) -- Larger for touch
+CloseButton.Position = UDim2.new(1, -40, 0, 0)
+CloseButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.TextSize = 20
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.Parent = MainFrame
+CloseButton.MouseButton1Click:Connect(function()
+    MainFrame.Visible = false
+end)
+
+-- Scrolling Frame (Touch-Scrollable)
+local ScrollingFrame = Instance.new("ScrollingFrame")
+ScrollingFrame.Name = "ScrollingFrame"
+ScrollingFrame.Size = UDim2.new(1, -10, 1, -50)
+ScrollingFrame.Position = UDim2.new(0, 5, 0, 45)
+ScrollingFrame.BackgroundTransparency = 1
+ScrollingFrame.ScrollBarThickness = 10 -- Thicker for touch
+ScrollingFrame.ScrollingDirection = Enum.ScrollingDirection.Y
+ScrollingFrame.Parent = MainFrame
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Parent = ScrollingFrame
+UIListLayout.Padding = UDim.new(0, 10) -- More spacing for touch
+
+-- Categories (Same as before, but with larger buttons)
+local Categories = {
+    ["Personal"] = {
+        {"Fly", function()
+            local flyEnabled = false
+            local flySpeed = 50
+            local flyConnection
+
+            if flyEnabled then
+                if flyConnection then flyConnection:Disconnect() end
+                Humanoid.PlatformStand = false
+                flyEnabled = false
+            else
+                Humanoid.PlatformStand = true
+                flyConnection = RunService.Heartbeat:Connect(function(dt)
+                    local root = Character:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        local moveDir = Vector3.new()
+                        -- Touch controls for fly (WASD replaced with on-screen buttons)
+                        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Vector3.new(0, 0, -1) end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir + Vector3.new(0, 0, 1) end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir + Vector3.new(-1, 0, 0) end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Vector3.new(1, 0, 0) end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+                        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir + Vector3.new(0, -1, 0) end
+                        root.Velocity = moveDir * flySpeed
+                    end
+                end)
+                flyEnabled = true
+            end
+        end},
+        {"Noclip", function()
+            local noclipEnabled = false
+            local noclipConnection
+
+            if noclipEnabled then
+                if noclipConnection then noclipConnection:Disconnect() end
+                noclipEnabled = false
+            else
+                noclipConnection = RunService.Stepped:Connect(function()
+                    for _, part in pairs(Character:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            part.CanCollide = false
+                        end
+                    end
+                end)
+                noclipEnabled = true
+            end
+        end},
+        {"Speed +", function()
+            Humanoid.WalkSpeed = Humanoid.WalkSpeed + 10
+        end},
+        {"Speed -", function()
+            Humanoid.WalkSpeed = math.max(16, Humanoid.WalkSpeed - 10)
+        end},
+        {"Invisibility", function()
+            for _, part in pairs(Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Transparency = part.Transparency == 1 and 0 or 1
+                end
+            end
+        end},
+        {"God Mode", function()
+            Humanoid.MaxHealth = math.huge
+            Humanoid.Health = math.huge
+        end},
+    },
+    ["Players"] = {
+        {"Kill Player", function()
+            local target = getPlayerFromSelection()
+            if target and target.Character then
+                local humanoid = target.Character:FindFirstChild("Humanoid")
+                if humanoid then humanoid.Health = 0 end
+            end
+        end},
+        {"Kick Player", function()
+            local target = getPlayerFromSelection()
+            if target then target:Kick("Kicked by Admin") end
+        end},
+        {"Bring Player", function()
+            local target = getPlayerFromSelection()
+            if target and target.Character and Character:FindFirstChild("HumanoidRootPart") then
+                local root = Character.HumanoidRootPart
+                target.Character:SetPrimaryPartCFrame(root.CFrame * CFrame.new(0, 0, -3))
+            end
+        end},
+        {"Teleport to Player", function()
+            local target = getPlayerFromSelection()
+            if target and target.Character and Character:FindFirstChild("HumanoidRootPart") then
+                local root = target.Character.HumanoidRootPart
+                Character:SetPrimaryPartCFrame(root.CFrame * CFrame.new(0, 0, 3))
+            end
+        end},
+    },
+    ["Map"] = {
+        {"Delete Map", function()
+            for _, part in pairs(workspace:GetDescendants()) do
+                if part:IsA("BasePart") and part ~= Character.HumanoidRootPart then
+                    part:Destroy()
+                end
+            end
+        end},
+        {"Freeze Map", function()
+            for _, part in pairs(workspace:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Anchored = true
+                end
+            end
+        end},
+        {"Unfreeze Map", function()
+            for _, part in pairs(workspace:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Anchored = false
+                end
+            end
+        end},
+    },
+    ["Trolling"] = {
+        {"Spam Chat", function()
+            while true do
+                game.ReplicatedStorage.DefaultChatSystemChatEvents.SayMessageRequest:FireServer("Delta Admin Activated!", "All")
+                wait(0.5)
+            end
+        end},
+        {"Lag Server", function()
+            while true do
+                for i = 1, 100 do
+                    Instance.new("Part", workspace)
+                end
+                wait(0.1)
+            end
+        end},
+    },
+}
+
+-- Helper function to get selected player (Touch-friendly dropdown)
+function getPlayerFromSelection()
+    local players = Players:GetPlayers()
+    local selectedPlayer = nil
+
+    -- Simple selection (replace with a dropdown in a real GUI)
+    for _, player in pairs(players) do
+        if player ~= LocalPlayer then
+            selectedPlayer = player
+            break
+        end
+    end
+
+    return selectedPlayer
+end
+
+-- Create Category Buttons (Larger for touch)
+for categoryName, commands in pairs(Categories) do
+    local CategoryFrame = Instance.new("Frame")
+    CategoryFrame.Name = categoryName .. "Frame"
+    CategoryFrame.Size = UDim2.new(1, -10, 0, 40) -- Larger for touch
+    CategoryFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    CategoryFrame.BackgroundTransparency = 0.5
+    CategoryFrame.Parent = ScrollingFrame
+
+    local CategoryLabel = Instance.new("TextLabel")
+    CategoryLabel.Name = "CategoryLabel"
+    CategoryLabel.Size = UDim2.new(1, 0, 1, 0)
+    CategoryLabel.Text = categoryName
+    CategoryLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CategoryLabel.TextSize = 18
+    CategoryLabel.Font = Enum.Font.GothamBold
+    CategoryLabel.BackgroundTransparency = 1
+    CategoryLabel.Parent = CategoryFrame
+
+    for _, command in pairs(commands) do
+        local CommandButton = Instance.new("TextButton")
+        CommandButton.Name = command[1] .. "Button"
+        CommandButton.Size = UDim2.new(1, -10, 0, 50) -- Larger for touch
+        CommandButton.Position = UDim2.new(0, 5, 0, 0)
+        CommandButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+        CommandButton.Text = command[1]
+        CommandButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        CommandButton.TextSize = 16
+        CommandButton.Font = Enum.Font.Gotham
+        CommandButton.Parent = ScrollingFrame
+        CommandButton.MouseButton1Click:Connect(command[2])
+    end
+end
+
+-- Admin Check
+if not ADMINS[LocalPlayer.UserId] then
+    MainFrame:Destroy()
+    warn("You are not an admin!")
+end
